@@ -4,3 +4,6 @@
 
 # python virtualenv
 .venv
+
+# config.json
+config.json
