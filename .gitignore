@@ -4,3 +4,9 @@
 
 # python virtualenv
 .venv
+
+# config.json
+config.json
+
+# python
+*.pyc

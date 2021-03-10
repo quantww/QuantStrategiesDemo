@@ -1,13 +1,14 @@
-import sys
+# -*- coding: utf-8 -*-
+
+from aioquant import quant
 
 
-def initialize():
-    from strategy.binance_strategy import BinanceStrategy
+def binance_strategy():
+    print("My first binance demo...")
+    from strategies.binance_strategy import BinanceStrategy
     BinanceStrategy()
 
-def main():
-    pass
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    config_file = "config.json"
+    quant.start(config_file, entrance_func=binance_strategy)
