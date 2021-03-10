@@ -7,3 +7,6 @@
 
 # config.json
 config.json
+
+# python
+*.pyc
