@@ -1,19 +1,24 @@
 # -*- coding: utf-8 -*-
 
 from aioquant import quant
+from aioquant.const import BINANCE
+from aioquant.error import Error
+from aioquant.order import Order
 from aioquant.platform.binance import BinanceRestAPI
 from aioquant.tasks import SingleTask, LoopRunTask
+from aioquant.trade import Trade
 from aioquant.utils import logger
-from aioquant.configure import config
 
 
 class BinanceStrategy:
 
     def __init__(self) -> None:
-        host = "https://api.binance.com"
-        access_key = "access_key"
-        secret_key = "secret_key"
-        self._rest_api = BinanceRestAPI(host=host, access_key=access_key, secret_key=secret_key)
+        self.host = "https://api.binance.com"
+        self._access_key = "_access_key"
+        self._secret_key = "_secret_key"
+        self._account = "_account@gmail.com"
+        # self._rest_api = BinanceRestAPI(host=self.host, access_key=self._access_key, secret_key=self._secret_key)
+        self._rest_api = BinanceRestAPI(access_key=self._access_key, secret_key=self._secret_key, host=self.host)
 
         # 初始化的时候查询一下账户的资产信息
         # SingleTask.run(self.get_assert_info)  # 本质是一个协程;
@@ -44,8 +49,19 @@ class BinanceStrategy:
 
         self._is_ok = True
 
-        # SingleTask.run(self.get_latest_orders)
-        # SingleTask.run(self.get_current_open_order)
+        params = dict(
+            strategy="Eat APPLE",
+            platform=BINANCE,
+            symbol="EOS/USDT",
+            account=self._account,  # 分布式...多个
+            access_key=self._access_key,
+            secret_key=self._secret_key,
+            order_update_callback=self.on_order_update_callback,
+            init_callback=self.on_init_callback,
+            error_callback=self.on_error_callback,
+        )
+
+        self._trade = Trade(**params)
 
         LoopRunTask.register(self.dynamic_trade, interval=5)
 
@@ -55,26 +71,22 @@ class BinanceStrategy:
         logger.info("success: ", success, caller=self)
         # logger.info("error: ", error, caller=self)
 
-    async def create_new_order(self, price: str):
+    async def create_new_order(self, price: float):
         """下单"""
-        symbol = self._symbol
         action = self._action
         quantity = self._quantity  # min 2.5
-        success, error = await self._rest_api.create_order(action, symbol, price, quantity)
+        logger.info("Doing price: ", price, "quantity: ", self._quantity)
+        order_id, error = await self._trade.create_order(action, price, quantity)
         if error:
-            self._is_ok = False
-            logger.warn("error: ", error, caller=self)
             return
-        self._order_id = str(success["orderId"])
+        self._order_id = order_id
         self._price = price
         logger.info("order_id", self._order_id, "price", price, caller=self)
 
     async def revoke_order(self, order_id: str):
         """撤销订单"""
-        success, error = await self._rest_api.revoke_order(self._symbol, order_id)
+        success, error = await self._trade.revoke_order(order_id)
         if error:
-            self._is_ok = False
-            logger.warn("error: ", error, caller=self)
             return
         logger.info("order_id: ", order_id, caller=self)
 
@@ -99,12 +111,8 @@ class BinanceStrategy:
     async def dynamic_trade(self, *args, **kwargs):
         """简化版的吃盘口毛刺策略"""
         if not self._is_ok:
-            logger.warn("something error", caller=self)
-            quant.stop()
             return
         success, error = await self._rest_api.get_orderbook(self._symbol, 10)
-        logger.info("success: ", success, caller=self)
-        # logger.info("error: ", error, caller=self)
         if error:
             # 通过 钉钉、微信等发送通知...
             # 或 接入风控系统;
@@ -117,7 +125,6 @@ class BinanceStrategy:
         average_price = round((ask6_price + ask8_price) / 2, 4)
         logger.info(f"the average price is {average_price}....", caller=self)
 
-
         if self._order_id and self._price:
             if self._price >= ask6_price and self._price <= ask8_price:
                 return
@@ -127,3 +134,17 @@ class BinanceStrategy:
 
         await self.create_new_order(average_price)
 
+    async def on_order_update_callback(self, order: Order):
+        """不会主动被调用,当订单有变化的时候会被调用"""
+        logger.info("order", order, caller=self)
+
+    async def on_init_callback(self, success: bool, **kwargs):
+        """用于标记: 初始化Trade()成功或失败"""
+        print("self", self, "success", success)
+        logger.info("order", success, caller=self)
+
+    async def on_error_callback(self, error: Error, **kwargs):
+        """执行过程中有任意的失败情况下都会报错"""
+        self._is_ok = error
+        logger.info("error", error, caller=self)
+        quant.stop()
