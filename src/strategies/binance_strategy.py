@@ -3,7 +3,7 @@
 from aioquant import quant
 from aioquant.const import BINANCE
 from aioquant.error import Error
-from aioquant.order import Order
+from aioquant.order import Order, ORDER_STATUS_FILLED, ORDER_STATUS_PARTIAL_FILLED, ORDER_STATUS_FAILED
 from aioquant.platform.binance import BinanceRestAPI
 from aioquant.tasks import SingleTask, LoopRunTask
 from aioquant.trade import Trade
@@ -19,15 +19,6 @@ class BinanceStrategy:
         self._account = "_account@gmail.com"
         # self._rest_api = BinanceRestAPI(host=self.host, access_key=self._access_key, secret_key=self._secret_key)
         self._rest_api = BinanceRestAPI(access_key=self._access_key, secret_key=self._secret_key, host=self.host)
-
-        # 初始化的时候查询一下账户的资产信息
-        # SingleTask.run(self.get_assert_info)  # 本质是一个协程;
-
-        # 下单
-        # SingleTask.run(self.create_new_order)
-
-        # 撤单
-        # SingleTask.run(self.revoke_order)
 
         """
         '吃盘口毛刺'的简化策略: 根据实时盘口变化取卖6和卖8的价格,并根据他们的平均价格来挂卖单
@@ -64,12 +55,6 @@ class BinanceStrategy:
         self._trade = Trade(**params)
 
         LoopRunTask.register(self.dynamic_trade, interval=5)
-
-    async def get_assert_info(self):
-        """获取资产信息"""
-        success, error = await self._rest_api.get_user_account()
-        logger.info("success: ", success, caller=self)
-        # logger.info("error: ", error, caller=self)
 
     async def create_new_order(self, price: float):
         """下单"""
@@ -137,6 +122,20 @@ class BinanceStrategy:
     async def on_order_update_callback(self, order: Order):
         """不会主动被调用,当订单有变化的时候会被调用"""
         logger.info("order", order, caller=self)
+        if order.status == ORDER_STATUS_FILLED:
+            # 完全成交
+            self._order_id = ""
+            self._price = 0.0
+            # TODO: 完全对冲
+        elif order.status == ORDER_STATUS_PARTIAL_FILLED:
+            # 部分成交
+            # TODO: 部分对冲
+            pass
+        elif order.status == ORDER_STATUS_FAILED:
+            # 报警, 触发风控
+            pass
+        else:
+            return
 
     async def on_init_callback(self, success: bool, **kwargs):
         """用于标记: 初始化Trade()成功或失败"""
