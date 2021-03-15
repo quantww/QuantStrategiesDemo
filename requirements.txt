@@ -1,6 +1,6 @@
 aioamqp==0.13.0
 aiohttp==3.6.2
--e git+https://github.com/GalphaXie/BaseOnAioquant.git@afc134b6152d7e9de4d3fd2158da03f65ea210e3#egg=aioquant
+-e git+https://github.com/GalphaXie/BaseOnAioquant.git@9922a6670a9930d50101a2124c89357b035415ad#egg=aioquant
 async-timeout==3.0.1
 attrs==20.3.0
 chardet==3.0.4

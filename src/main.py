@@ -6,8 +6,6 @@ from aioquant import quant
 def binance_strategy():
     from strategies.binance_strategy import BinanceStrategy
     BinanceStrategy()
-    # from strategies.market_info import CustomMarket
-    # CustomMarket()
 
 
 if __name__ == '__main__':
