@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from aioquant import quant
 from aioquant.platform.binance import BinanceRestAPI
 from aioquant.tasks import SingleTask, LoopRunTask
 from aioquant.utils import logger
@@ -41,6 +42,8 @@ class BinanceStrategy:
         self._order_id = ""
         self._price = 0.0
 
+        self._is_ok = True
+
         # SingleTask.run(self.get_latest_orders)
         # SingleTask.run(self.get_current_open_order)
 
@@ -58,17 +61,21 @@ class BinanceStrategy:
         action = self._action
         quantity = self._quantity  # min 2.5
         success, error = await self._rest_api.create_order(action, symbol, price, quantity)
+        if error:
+            self._is_ok = False
+            logger.warn("error: ", error, caller=self)
+            return
         self._order_id = str(success["orderId"])
         self._price = price
         logger.info("order_id", self._order_id, "price", price, caller=self)
 
     async def revoke_order(self, order_id: str):
         """撤销订单"""
-
-        symbol = "EOSUSDT"
-        # order_id = "1597308936"
-
-        success, error = await self._rest_api.revoke_order(symbol, order_id)
+        success, error = await self._rest_api.revoke_order(self._symbol, order_id)
+        if error:
+            self._is_ok = False
+            logger.warn("error: ", error, caller=self)
+            return
         logger.info("order_id: ", order_id, caller=self)
 
     async def get_latest_orders(self):
@@ -91,9 +98,19 @@ class BinanceStrategy:
 
     async def dynamic_trade(self, *args, **kwargs):
         """简化版的吃盘口毛刺策略"""
+        if not self._is_ok:
+            logger.warn("something error", caller=self)
+            quant.stop()
+            return
         success, error = await self._rest_api.get_orderbook(self._symbol, 10)
         logger.info("success: ", success, caller=self)
-        logger.info("error: ", error, caller=self)
+        # logger.info("error: ", error, caller=self)
+        if error:
+            # 通过 钉钉、微信等发送通知...
+            # 或 接入风控系统;
+            self._is_ok = False
+            logger.warn("error: ", error, caller=self)
+            return
 
         ask6_price = float(success["asks"][5][0])
         ask8_price = float(success["asks"][7][0])
