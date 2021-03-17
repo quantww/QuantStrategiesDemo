@@ -38,7 +38,7 @@ class BinanceStrategy:
         self._order_id = ""
         self._price = 0.0
 
-        self._is_ok = True
+        self._is_ok = False
 
         params = dict(
             strategy="Eat APPLE",
@@ -139,11 +139,18 @@ class BinanceStrategy:
 
     async def on_init_callback(self, success: bool, **kwargs):
         """用于标记: 初始化Trade()成功或失败"""
-        print("self", self, "success", success)
-        logger.info("order", success, caller=self)
+        logger.info("success", success, caller=self)
+        if not success:
+            return
+
+        _, error = await self._trade.revoke_order()
+        if not error:
+            return
+
+        self._is_ok = True
 
     async def on_error_callback(self, error: Error, **kwargs):
         """执行过程中有任意的失败情况下都会报错"""
-        self._is_ok = error
+        self._is_ok = False
         logger.info("error", error, caller=self)
         quant.stop()
