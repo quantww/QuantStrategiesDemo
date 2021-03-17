@@ -17,8 +17,7 @@ class BinanceStrategy:
         self._access_key = "_access_key"
         self._secret_key = "_secret_key"
         self._account = "_account@gmail.com"
-        # self._rest_api = BinanceRestAPI(host=self.host, access_key=self._access_key, secret_key=self._secret_key)
-        self._rest_api = BinanceRestAPI(access_key=self._access_key, secret_key=self._secret_key, host=self.host)
+        # self._rest_api = BinanceRestAPI(access_key=self._access_key, secret_key=self._secret_key, host=self.host)
 
         """
         '吃盘口毛刺'的简化策略: 根据实时盘口变化取卖6和卖8的价格,并根据他们的平均价格来挂卖单
@@ -75,29 +74,11 @@ class BinanceStrategy:
             return
         logger.info("order_id: ", order_id, caller=self)
 
-    async def get_latest_orders(self):
-        """获取最新盘口价格(订单薄)"""
-        success, _ = await self._rest_api.get_orderbook(self._symbol, 10)
-        logger.info("success: ", success, caller=self)
-
-        ask6_price = success["asks"][5][0]
-        ask8_price = success["asks"][7][0]
-        average_price = round((float(ask6_price) + float(ask8_price)) / 2, 4)
-
-        logger.info("ask6_price", ask6_price, "ask8_price", ask8_price, caller=self)
-        logger.info("The average price is: ", average_price)
-
-    async def get_current_open_order(self):
-        """查询当前用户是否有挂单"""
-        success, error = await self._rest_api.get_open_orders(self._symbol)
-        logger.info("success: ", success, caller=self)
-        logger.info("error: ", error, caller=self)
-
     async def dynamic_trade(self, *args, **kwargs):
         """简化版的吃盘口毛刺策略"""
         if not self._is_ok:
             return
-        success, error = await self._rest_api.get_orderbook(self._symbol, 10)
+        success, error = await self._trade.rest_api.get_orderbook(self._symbol, 10)
         if error:
             # 通过 钉钉、微信等发送通知...
             # 或 接入风控系统;
@@ -109,6 +90,7 @@ class BinanceStrategy:
         ask8_price = float(success["asks"][7][0])
         average_price = round((ask6_price + ask8_price) / 2, 4)
         logger.info(f"the average price is {average_price}....", caller=self)
+        # average_price += 0.2  # 因为总量不足以达到EOS/USDT交易的下限,所以这里加价格来进行测试挂单撤单;
 
         if self._order_id and self._price:
             if self._price >= ask6_price and self._price <= ask8_price:
@@ -144,7 +126,7 @@ class BinanceStrategy:
             return
 
         _, error = await self._trade.revoke_order()
-        if not error:
+        if error:
             return
 
         self._is_ok = True
