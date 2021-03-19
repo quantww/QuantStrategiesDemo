@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
 from aioquant import quant
-from aioquant.const import BINANCE
+from aioquant.const import BINANCE, HUOBI, OKEX
+from aioquant.configure import config
 from aioquant.error import Error
 from aioquant.order import Order, ORDER_STATUS_FILLED, ORDER_STATUS_PARTIAL_FILLED, ORDER_STATUS_FAILED
-from aioquant.platform.binance import BinanceRestAPI
-from aioquant.tasks import SingleTask, LoopRunTask
+from aioquant.tasks import LoopRunTask
 from aioquant.trade import Trade
 from aioquant.utils import logger
 
@@ -13,23 +13,12 @@ from aioquant.utils import logger
 class BinanceStrategy:
 
     def __init__(self) -> None:
-        self.host = "https://api.binance.com"
-        self._access_key = "_access_key"
-        self._secret_key = "_secret_key"
-        self._account = "_account@gmail.com"
-        # self._rest_api = BinanceRestAPI(access_key=self._access_key, secret_key=self._secret_key, host=self.host)
-
         """
         '吃盘口毛刺'的简化策略: 根据实时盘口变化取卖6和卖8的价格,并根据他们的平均价格来挂卖单
         即, average_price = (ask6_price + ask8_price) / 2 取指定位数的数据, EOS是4位;
 
         在策略启动的时候判断是否有挂单, 如果有挂单, 判断价格是否已经超过 ask6_price 和 ask8_price 的区间,
         如果超过那么撤单后再重新挂单.
-
-        拆解:
-        1.挂单;
-        2.撤单;
-        3.获取盘口信息(计算平均值);
         """
         self._symbol = "EOSUSDT"
         self._action = "SELL"
@@ -40,12 +29,13 @@ class BinanceStrategy:
         self._is_ok = False
 
         params = dict(
-            strategy="Eat APPLE",
-            platform=BINANCE,
-            symbol="EOS/USDT",
-            account=self._account,  # 分布式...多个
-            access_key=self._access_key,
-            secret_key=self._secret_key,
+            strategy=config.strategy_name,
+            platform=config.platform,
+            symbol=config.symbol,
+            account=config.account,  # 分布式...多个
+            access_key=config.access_key,
+            secret_key=config.secret_key,
+            passphrase=config.passphrase,
             order_update_callback=self.on_order_update_callback,
             init_callback=self.on_init_callback,
             error_callback=self.on_error_callback,
@@ -53,7 +43,15 @@ class BinanceStrategy:
 
         self._trade = Trade(**params)
 
-        LoopRunTask.register(self.dynamic_trade, interval=5)
+        if config.platform == BINANCE:
+            LoopRunTask.register(self.dynamic_trade_with_binance, interval=2)
+        elif config.platform == HUOBI:
+            LoopRunTask.register(self.dynamic_trade_with_huobi, interval=2)
+        elif config.platform == OKEX:
+            LoopRunTask.register(self.dynamic_trade_with_okex, interval=2)
+        else:
+            logger.error("platform error:", config.platform, caller=self)
+            quant.stop()
 
     async def create_new_order(self, price: float):
         """下单"""
@@ -69,12 +67,12 @@ class BinanceStrategy:
 
     async def revoke_order(self, order_id: str):
         """撤销订单"""
-        success, error = await self._trade.revoke_order(order_id)
+        _, error = await self._trade.revoke_order(order_id)
         if error:
             return
         logger.info("order_id: ", order_id, caller=self)
 
-    async def dynamic_trade(self, *args, **kwargs):
+    async def dynamic_trade_with_binance(self, *args, **kwargs):
         """简化版的吃盘口毛刺策略"""
         if not self._is_ok:
             return
@@ -90,8 +88,11 @@ class BinanceStrategy:
         ask8_price = float(success["asks"][7][0])
         average_price = round((ask6_price + ask8_price) / 2, 4)
         logger.info(f"the average price is {average_price}....", caller=self)
-        # average_price += 0.2  # 因为总量不足以达到EOS/USDT交易的下限,所以这里加价格来进行测试挂单撤单;
 
+        await self.strategy_process(ask6_price, ask8_price, average_price)
+
+    async def strategy_process(self, ask6_price: float, ask8_price: float, average_price: float):
+        """handle strategy process"""
         if self._order_id and self._price:
             if self._price >= ask6_price and self._price <= ask8_price:
                 return
@@ -100,6 +101,12 @@ class BinanceStrategy:
             await self.revoke_order(self._order_id)
 
         await self.create_new_order(average_price)
+
+    async def dynamic_trade_with_huobi(self, *args, **kwargs):
+        raise NotImplementedError()
+
+    async def dynamic_trade_with_okex(self, *args, **kwargs):
+        raise NotImplementedError()
 
     async def on_order_update_callback(self, order: Order):
         """不会主动被调用,当订单有变化的时候会被调用"""
